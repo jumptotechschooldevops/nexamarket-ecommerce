@@ -1,0 +1,91 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-nexamarket}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change_me_dev_password}
+      POSTGRES_DB: ${POSTGRES_DB:-nexamarket}
+    ports:
+      - '${POSTGRES_PORT:-5432}:5432'
+    volumes:
+      - nexamarket-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER:-nexamarket} -d ${POSTGRES_DB:-nexamarket}']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  migrate:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+      target: build
+    command: ['npx', 'tsx', 'src/db/migrate.ts']
+    environment:
+      NODE_ENV: ${NODE_ENV:-production}
+      DATABASE_URL: postgres://${POSTGRES_USER:-nexamarket}:${POSTGRES_PASSWORD:-change_me_dev_password}@postgres:5432/${POSTGRES_DB:-nexamarket}
+      JWT_SECRET: ${JWT_SECRET:-change_me_to_a_long_random_string_at_least_32_chars}
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  seed:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+      target: build
+    command: ['npx', 'tsx', 'src/db/seed/run-seed.ts']
+    environment:
+      NODE_ENV: ${NODE_ENV:-production}
+      DATABASE_URL: postgres://${POSTGRES_USER:-nexamarket}:${POSTGRES_PASSWORD:-change_me_dev_password}@postgres:5432/${POSTGRES_DB:-nexamarket}
+      JWT_SECRET: ${JWT_SECRET:-change_me_to_a_long_random_string_at_least_32_chars}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    profiles: ['seed']
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      NODE_ENV: ${NODE_ENV:-production}
+      PORT: ${BACKEND_PORT:-4000}
+      DATABASE_URL: postgres://${POSTGRES_USER:-nexamarket}:${POSTGRES_PASSWORD:-change_me_dev_password}@postgres:5432/${POSTGRES_DB:-nexamarket}
+      PGPOOL_MAX: ${PGPOOL_MAX:-10}
+      JWT_SECRET: ${JWT_SECRET:-change_me_to_a_long_random_string_at_least_32_chars}
+      JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-2h}
+      CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost:8080}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+    ports:
+      - '${BACKEND_PORT:-4000}:4000'
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ['CMD', 'node', '-e', "require('http').get('http://127.0.0.1:4000/ready',(r)=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        VITE_API_URL: ${VITE_API_URL:-/api}
+    restart: unless-stopped
+    environment:
+      BACKEND_UPSTREAM: ${BACKEND_UPSTREAM:-backend:4000}
+    ports:
+      - '${FRONTEND_PORT:-8080}:8080'
+    depends_on:
+      backend:
+        condition: service_healthy
+
+volumes:
+  nexamarket-postgres-data:
