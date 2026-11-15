@@ -1,0 +1,106 @@
+# Default-deny ingress for every pod in the namespace, then explicit allow
+# rules per component below. Egress is intentionally left unrestricted here
+# — a default-deny egress policy also needs explicit allows for DNS
+# (kube-dns/CoreDNS) and the EKS API/metadata endpoints to avoid breaking
+# the cluster in subtle ways, which is a reasonable next step for a real
+# environment but more than this masterclass's NetworkPolicy section needs
+# to demonstrate. See k8s/README.md for how to tighten it further.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-ingress
+  namespace: nexamarket
+  labels:
+    app.kubernetes.io/part-of: nexamarket
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+---
+# The frontend is the only component meant to receive traffic from outside
+# the cluster (via the ALB). AWS's VPC CNI means ALB-to-pod traffic arrives
+# with the client's real source IP from within the VPC CIDR rather than
+# from an identifiable in-cluster pod/namespace, so there's no meaningful
+# podSelector/namespaceSelector to restrict this to — actual network
+# isolation for the ALB itself is handled by its Security Group at the AWS
+# layer, not by this NetworkPolicy. 0.0.0.0/0 here matches "this Service is
+# deliberately public," not "this NetworkPolicy provides no value" — it
+# still stops anything else in the cluster from being able to pretend to be
+# the frontend's traffic source in a way that would matter if egress were
+# later locked down too.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-ingress-to-frontend
+  namespace: nexamarket
+  labels:
+    app.kubernetes.io/part-of: nexamarket
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: nexamarket-frontend
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+      ports:
+        - protocol: TCP
+          port: 8080
+---
+# Backend only accepts traffic from the frontend (proxying /api/*) and
+# from the migration/seed Jobs' pods — nothing else in the namespace, and
+# nothing from outside the cluster, can reach it directly.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-ingress-to-backend
+  namespace: nexamarket
+  labels:
+    app.kubernetes.io/part-of: nexamarket
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: nexamarket-backend
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: nexamarket-frontend
+      ports:
+        - protocol: TCP
+          port: 4000
+---
+# Postgres only accepts connections from the backend Deployment and from
+# the migration/seed Jobs — never from the frontend, and never from
+# outside the cluster.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-ingress-to-postgres
+  namespace: nexamarket
+  labels:
+    app.kubernetes.io/part-of: nexamarket
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: nexamarket-postgres
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: nexamarket-backend
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: nexamarket-db-migrate
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: nexamarket-db-seed
+      ports:
+        - protocol: TCP
+          port: 5432

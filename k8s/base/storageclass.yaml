@@ -1,0 +1,30 @@
+# Requires the AWS EBS CSI driver add-on installed on the EKS cluster
+# (either via an EKS managed add-on or the ebs-csi-controller Helm chart).
+# Not namespaced — a StorageClass is cluster-scoped, so this is applied once
+# per cluster regardless of how many namespaces/overlays use it.
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: nexamarket-ebs-gp3-encrypted
+  labels:
+    app.kubernetes.io/part-of: nexamarket
+provisioner: ebs.csi.aws.com
+parameters:
+  type: gp3
+  encrypted: "true"
+  # Omit kmsKeyId to use the AWS-managed default EBS key (aws/ebs), or set
+  # it to a customer-managed KMS key ARN placeholder for a real environment:
+  # kmsKeyId: "arn:aws:kms:<AWS_REGION_PLACEHOLDER>:<AWS_ACCOUNT_ID_PLACEHOLDER>:key/<KEY_ID_PLACEHOLDER>"
+  fsType: ext4
+# WaitForFirstConsumer delays volume creation until a Pod claiming it is
+# actually scheduled, so the EBS volume is provisioned in the same
+# Availability Zone as the node — required for EBS (it cannot attach
+# cross-AZ). With immediate binding, the volume could land in an AZ with no
+# schedulable node and the Pod would be stuck Pending forever.
+volumeBindingMode: WaitForFirstConsumer
+allowVolumeExpansion: true
+# Retain (not Delete) on purpose: this StorageClass backs the PostgreSQL
+# data volume. Deleting the StatefulSet/PVC should never silently destroy
+# the only copy of the database. Reclaiming the underlying EBS volume after
+# a deliberate teardown is a manual, auditable step.
+reclaimPolicy: Retain

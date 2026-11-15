@@ -1,0 +1,68 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: nexamarket-staging
+  namespace: argocd
+  labels:
+    app.kubernetes.io/part-of: nexamarket
+    app.kubernetes.io/environment: staging
+  finalizers:
+    # Ensures Argo CD cascades delete (removes the deployed resources) if
+    # this Application object itself is ever deleted, instead of leaving an
+    # orphaned namespace/workloads behind in the cluster.
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: nexamarket
+
+  source:
+    repoURL: "https://github.com/<GITHUB_ORG_PLACEHOLDER>/nexamarket-ecommerce.git"
+    # Point this at whatever ref staging should track — a long-lived
+    # "staging" branch, or just "main" if every merge to main should go to
+    # staging automatically.
+    targetRevision: main
+    path: k8s/overlays/staging
+
+  destination:
+    # Replace with the actual staging EKS cluster's API server URL (or the
+    # Argo CD cluster secret name it's registered under), or
+    # "https://kubernetes.default.svc" if Argo CD runs in the same cluster
+    # it's deploying staging into.
+    server: "<STAGING_EKS_CLUSTER_API_SERVER_PLACEHOLDER>"
+    namespace: nexamarket
+
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      # The Namespace is already one of this Application's own tracked
+      # resources (base/namespace.yaml, carrying the Pod Security Standards
+      # labels) — CreateNamespace=true would create a bare one ahead of
+      # that and fight it.
+      - CreateNamespace=false
+      - ServerSideApply=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 10s
+        factor: 2
+        maxDuration: 3m
+
+  # The HPAs in k8s/base/*/hpa.yaml actively manage these Deployments'
+  # replica counts at runtime. Without this, Argo CD would see the live
+  # replica count drift from what's committed in Git (the fixed count set
+  # by overlays/staging/kustomization.yaml's `replicas:` block) and either
+  # fight the HPA every sync interval or show permanently OutOfSync.
+  ignoreDifferences:
+    - group: apps
+      kind: Deployment
+      name: nexamarket-backend
+      namespace: nexamarket
+      jsonPointers:
+        - /spec/replicas
+    - group: apps
+      kind: Deployment
+      name: nexamarket-frontend
+      namespace: nexamarket
+      jsonPointers:
+        - /spec/replicas

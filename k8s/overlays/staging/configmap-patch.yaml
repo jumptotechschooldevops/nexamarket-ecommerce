@@ -1,0 +1,10 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: nexamarket-config
+  namespace: nexamarket
+data:
+  CORS_ORIGIN: "https://<STAGING_DOMAIN_NAME_PLACEHOLDER>"
+  # More verbose than production, intentionally — staging is where you
+  # want to see request-level detail while testing a pre-release build.
+  LOG_LEVEL: "debug"

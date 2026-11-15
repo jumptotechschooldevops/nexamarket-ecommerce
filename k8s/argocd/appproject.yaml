@@ -1,0 +1,60 @@
+# Scopes what the two Applications below are allowed to do, rather than
+# leaving them on Argo CD's unrestricted "default" AppProject. Both
+# Applications reference this same project; it isn't split per-environment
+# because the restriction (this one repo, these kinds, these destinations)
+# is identical for both — only which destination/namespace each
+# Application actually targets differs.
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: nexamarket
+  namespace: argocd
+spec:
+  description: NexaMarket multi-vendor marketplace (frontend, backend, PostgreSQL)
+
+  sourceRepos:
+    - "https://github.com/<GITHUB_ORG_PLACEHOLDER>/nexamarket-ecommerce.git"
+
+  destinations:
+    - namespace: nexamarket
+      server: "<STAGING_EKS_CLUSTER_API_SERVER_PLACEHOLDER>"
+    - namespace: nexamarket
+      server: "<PRODUCTION_EKS_CLUSTER_API_SERVER_PLACEHOLDER>"
+
+  # Only the Kubernetes/AWS resource kinds this app actually uses — nothing
+  # cluster-wide and unrelated (no RBAC, no CRDs other than the one
+  # monitoring kind, no arbitrary cluster-scoped resources) can be deployed
+  # through either Application even if something slipped into the repo.
+  clusterResourceWhitelist:
+    - group: ""
+      kind: Namespace
+    - group: storage.k8s.io
+      kind: StorageClass
+  namespaceResourceWhitelist:
+    - group: ""
+      kind: ConfigMap
+    - group: ""
+      kind: Secret
+    - group: ""
+      kind: Service
+    - group: ""
+      kind: ServiceAccount
+    - group: apps
+      kind: Deployment
+    - group: apps
+      kind: StatefulSet
+    - group: batch
+      kind: Job
+    - group: autoscaling
+      kind: HorizontalPodAutoscaler
+    - group: policy
+      kind: PodDisruptionBudget
+    - group: networking.k8s.io
+      kind: NetworkPolicy
+    - group: networking.k8s.io
+      kind: Ingress
+    - group: monitoring.coreos.com
+      kind: ServiceMonitor
+
+  orphanedResources:
+    warn: true

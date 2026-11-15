@@ -1,0 +1,47 @@
+# minReplicas/maxReplicas here are the base defaults; each overlay patches
+# them to match its own replica strategy (see overlays/*/kustomization.yaml
+# patches). Requires the metrics-server add-on on the cluster for the
+# resource-based metrics below to resolve.
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: nexamarket-backend
+  namespace: nexamarket
+  labels:
+    app.kubernetes.io/name: nexamarket-backend
+    app.kubernetes.io/part-of: nexamarket
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: nexamarket-backend
+  minReplicas: 2
+  maxReplicas: 6
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: 80
+  behavior:
+    scaleDown:
+      # Don't thrash: wait 5 minutes of sustained low usage before removing
+      # a pod, and only ever remove one at a time.
+      stabilizationWindowSeconds: 300
+      policies:
+        - type: Pods
+          value: 1
+          periodSeconds: 120
+    scaleUp:
+      stabilizationWindowSeconds: 0
+      policies:
+        - type: Pods
+          value: 2
+          periodSeconds: 60

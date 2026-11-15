@@ -1,0 +1,24 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: nexamarket-ingress
+  namespace: nexamarket
+  annotations:
+    # Staging doesn't need to be reachable from the public internet the
+    # way production does — "internal" provisions an ALB with only a
+    # private IP, resolvable from inside the VPC (e.g. over a VPN or
+    # VPC-peered office network) rather than a public one.
+    alb.ingress.kubernetes.io/scheme: internal
+    alb.ingress.kubernetes.io/certificate-arn: "<STAGING_ACM_CERTIFICATE_ARN_PLACEHOLDER>"
+spec:
+  rules:
+    - host: "<STAGING_DOMAIN_NAME_PLACEHOLDER>"
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: nexamarket-frontend
+                port:
+                  number: 8080

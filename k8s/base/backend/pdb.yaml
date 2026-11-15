@@ -1,0 +1,20 @@
+# A percentage (rather than a fixed integer) scales automatically with
+# whatever replica count an overlay sets, without needing a matching PDB
+# patch alongside every replica-count patch. At 3 replicas (production),
+# minAvailable 50% rounds up to 2 — one pod can always be drained/evicted
+# at a time. At 1 replica (an unscaled staging default), it rounds up to 1,
+# which blocks voluntary disruption entirely; that's an accurate reflection
+# of reality (you cannot tolerate disruption with only one pod), not a bug.
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: nexamarket-backend
+  namespace: nexamarket
+  labels:
+    app.kubernetes.io/name: nexamarket-backend
+    app.kubernetes.io/part-of: nexamarket
+spec:
+  minAvailable: 50%
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: nexamarket-backend

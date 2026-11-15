@@ -1,0 +1,10 @@
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: nexamarket-backend
+  namespace: nexamarket
+spec:
+  # Keep in sync with STAGING_REPLICAS in kustomization.yaml's `replicas:`
+  # block below.
+  minReplicas: 1
+  maxReplicas: 4

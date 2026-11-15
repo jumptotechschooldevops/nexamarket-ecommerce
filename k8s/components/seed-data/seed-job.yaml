@@ -1,0 +1,75 @@
+# OPTIONAL demo-data seed, packaged as a Kustomize Component — NOT part of
+# base/, and NOT included by the production overlay. Only the staging
+# overlay opts into it (via `components: [../../components/seed-data]` in
+# overlays/staging/kustomization.yaml), because loading 42 fictional
+# products and demo accounts into a production database on every sync
+# would be actively wrong. It's a Component rather than a plain file
+# referenced from base/jobs/ because Kustomize refuses, for security
+# reasons, to let an overlay pull in a bare resource file that lives
+# outside its own directory tree — this is the supported way to share an
+# optional resource across overlays without copy-pasting it.
+#
+# Runs backend/src/db/seed/run-seed.ts (compiled to
+# dist/db/seed/run-seed.js). It is idempotent — every row is upserted by
+# its natural unique key (email/slug), and it calls the migration logic
+# itself first — but it is still a PostSync hook with a later sync wave
+# than the migrate Job, so it only ever runs after migrations have
+# succeeded and the application has been synced.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: nexamarket-db-seed
+  namespace: nexamarket
+  labels:
+    app.kubernetes.io/name: nexamarket-db-seed
+    app.kubernetes.io/component: seed
+    app.kubernetes.io/part-of: nexamarket
+  annotations:
+    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+    argocd.argoproj.io/sync-wave: "1"
+spec:
+  backoffLimit: 3
+  activeDeadlineSeconds: 300
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: nexamarket-db-seed
+        app.kubernetes.io/component: seed
+        app.kubernetes.io/part-of: nexamarket
+    spec:
+      restartPolicy: Never
+      serviceAccountName: nexamarket-migration
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: seed
+          image: "<AWS_ACCOUNT_ID>.dkr.ecr.<AWS_REGION>.amazonaws.com/nexamarket-backend:<IMAGE_TAG>"
+          imagePullPolicy: IfNotPresent
+          command: ["node", "dist/db/seed/run-seed.js"]
+          envFrom:
+            - configMapRef:
+                name: nexamarket-config
+            - secretRef:
+                name: nexamarket-backend-secrets
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir: {}

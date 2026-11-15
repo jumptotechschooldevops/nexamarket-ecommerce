@@ -1,0 +1,19 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: nexamarket-frontend
+  namespace: nexamarket
+  labels:
+    app.kubernetes.io/name: nexamarket-frontend
+    app.kubernetes.io/part-of: nexamarket
+spec:
+  # type: ClusterIP — the ALB Ingress Controller (target-type: ip) talks
+  # directly to pod IPs for routing, but still resolves them through this
+  # Service's Endpoints, so it stays ClusterIP rather than NodePort.
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: nexamarket-frontend
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http

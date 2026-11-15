@@ -1,0 +1,41 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - ../../base
+
+# Optional demo-data seed Job, opted into for staging only — see
+# components/seed-data/seed-job.yaml's own comments for why it's excluded
+# from base/ and from the production overlay.
+#
+# No monitoring component here on purpose, to demonstrate that it really is
+# optional per-overlay — add ../../components/monitoring too if your
+# staging cluster also runs Prometheus Operator and you want it there too.
+components:
+  - ../../components/seed-data
+
+# ---------------------------------------------------------------------
+# CONFIGURABLE STAGING REPLICAS — change these two numbers to scale
+# staging up (e.g. for a load test or a demo) or back down to 1 afterward.
+# They're deliberately separate from production's fixed 3/3 so staging can
+# stay cheap by default without touching base/ or production/ at all.
+# Keep backend-hpa-patch.yaml / frontend-hpa-patch.yaml's minReplicas equal
+# to whatever you set here, so the HPA doesn't fight these fixed counts.
+# ---------------------------------------------------------------------
+replicas:
+  - name: nexamarket-backend
+    count: 1
+  - name: nexamarket-frontend
+    count: 1
+
+patches:
+  - path: configmap-patch.yaml
+  - path: ingress-patch.yaml
+  - path: backend-hpa-patch.yaml
+  - path: frontend-hpa-patch.yaml
+
+labels:
+  - pairs:
+      app.kubernetes.io/instance: nexamarket-staging
+      app.kubernetes.io/environment: staging
+    includeSelectors: false
