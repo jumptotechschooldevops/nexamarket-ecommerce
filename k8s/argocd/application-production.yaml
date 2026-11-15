@@ -12,16 +12,20 @@ spec:
   project: nexamarket
 
   source:
-    repoURL: "https://github.com/<GITHUB_ORG_PLACEHOLDER>/nexamarket-ecommerce.git"
+    repoURL: "https://github.com/jumptotechschooldevops/nexamarket-ecommerce.git"
     # Pin production to a tag (e.g. "v1.4.0") or a protected "production"
     # branch in a real environment, rather than "main", so a merge to main
     # doesn't deploy to production before anyone's actually promoted it.
+    # Tracking "main" here matches demo-setup/workflows/release.yml's
+    # single-flow GitOps update for this masterclass.
     targetRevision: main
     path: k8s/overlays/production
 
   destination:
-    server: "<PRODUCTION_EKS_CLUSTER_API_SERVER_PLACEHOLDER>"
-    namespace: nexamarket
+    # Same single EKS cluster as staging (see application-staging.yaml's
+    # comment) — production is told apart purely by namespace.
+    server: "https://kubernetes.default.svc"
+    namespace: nexamarket-production
 
   syncPolicy:
     # Automated + selfHeal is the full GitOps story this masterclass is
@@ -50,12 +54,12 @@ spec:
     - group: apps
       kind: Deployment
       name: nexamarket-backend
-      namespace: nexamarket
+      namespace: nexamarket-production
       jsonPointers:
         - /spec/replicas
     - group: apps
       kind: Deployment
       name: nexamarket-frontend
-      namespace: nexamarket
+      namespace: nexamarket-production
       jsonPointers:
         - /spec/replicas

@@ -30,9 +30,9 @@ resources:
 # overlays override via their own `images:` block, rather than each overlay
 # needing a JSON6902/strategic-merge patch just to change a string.
 images:
-  - name: "<AWS_ACCOUNT_ID>.dkr.ecr.<AWS_REGION>.amazonaws.com/nexamarket-backend"
-    newName: "<AWS_ACCOUNT_ID>.dkr.ecr.<AWS_REGION>.amazonaws.com/nexamarket-backend"
+  - name: "668484272259.dkr.ecr.us-east-2.amazonaws.com/nexamarket-backend"
+    newName: "668484272259.dkr.ecr.us-east-2.amazonaws.com/nexamarket-backend"
     newTag: "<IMAGE_TAG>"
-  - name: "<AWS_ACCOUNT_ID>.dkr.ecr.<AWS_REGION>.amazonaws.com/nexamarket-frontend"
-    newName: "<AWS_ACCOUNT_ID>.dkr.ecr.<AWS_REGION>.amazonaws.com/nexamarket-frontend"
+  - name: "668484272259.dkr.ecr.us-east-2.amazonaws.com/nexamarket-frontend"
+    newName: "668484272259.dkr.ecr.us-east-2.amazonaws.com/nexamarket-frontend"
     newTag: "<IMAGE_TAG>"

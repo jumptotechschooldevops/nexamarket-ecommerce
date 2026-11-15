@@ -4,6 +4,12 @@ kind: Kustomization
 resources:
   - ../../base
 
+# Single EKS cluster (testingfile), both environments live here side by
+# side — this namespace rename is what actually separates staging from
+# production, not a different cluster. See the matching comment in
+# overlays/production/kustomization.yaml.
+namespace: nexamarket-staging
+
 # Optional demo-data seed Job, opted into for staging only — see
 # components/seed-data/seed-job.yaml's own comments for why it's excluded
 # from base/ and from the production overlay.

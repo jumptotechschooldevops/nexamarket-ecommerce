@@ -4,6 +4,15 @@ kind: Kustomization
 resources:
   - ../../base
 
+# Single EKS cluster (testingfile), both environments live here side by
+# side — this is what actually separates production from staging, not a
+# different cluster. Renames base/namespace.yaml's Namespace itself (from
+# "nexamarket" to "nexamarket-production") AND sets metadata.namespace on
+# every namespaced resource to match, in one step. BACKEND_UPSTREAM/
+# DATABASE_URL in base/ deliberately use short (unqualified) Service names
+# so they keep resolving correctly after this rename — see their comments.
+namespace: nexamarket-production
+
 # Optional monitoring (ServiceMonitor + the NetworkPolicy allowing
 # Prometheus to scrape it) is enabled for production, where you'd actually
 # have Prometheus Operator installed and alerting configured. It requires

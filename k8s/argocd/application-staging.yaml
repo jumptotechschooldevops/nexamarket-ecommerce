@@ -15,20 +15,22 @@ spec:
   project: nexamarket
 
   source:
-    repoURL: "https://github.com/<GITHUB_ORG_PLACEHOLDER>/nexamarket-ecommerce.git"
+    repoURL: "https://github.com/jumptotechschooldevops/nexamarket-ecommerce.git"
     # Point this at whatever ref staging should track — a long-lived
     # "staging" branch, or just "main" if every merge to main should go to
-    # staging automatically.
+    # staging automatically (what demo-setup/workflows/release.yml's
+    # GitOps-update step assumes for this masterclass).
     targetRevision: main
     path: k8s/overlays/staging
 
   destination:
-    # Replace with the actual staging EKS cluster's API server URL (or the
-    # Argo CD cluster secret name it's registered under), or
-    # "https://kubernetes.default.svc" if Argo CD runs in the same cluster
-    # it's deploying staging into.
-    server: "<STAGING_EKS_CLUSTER_API_SERVER_PLACEHOLDER>"
-    namespace: nexamarket
+    # Single-cluster masterclass setup: Argo CD runs inside the same EKS
+    # cluster ("testingfile", us-east-2, account 668484272259) it deploys
+    # to, so this is the in-cluster API server address, not an external
+    # one. Staging and production are told apart by namespace, not by
+    # cluster — see overlays/staging/kustomization.yaml's `namespace:` field.
+    server: "https://kubernetes.default.svc"
+    namespace: nexamarket-staging
 
   syncPolicy:
     automated:
@@ -37,8 +39,9 @@ spec:
     syncOptions:
       # The Namespace is already one of this Application's own tracked
       # resources (base/namespace.yaml, carrying the Pod Security Standards
-      # labels) — CreateNamespace=true would create a bare one ahead of
-      # that and fight it.
+      # labels, renamed to nexamarket-staging by the overlay) —
+      # CreateNamespace=true would create a bare one ahead of that and
+      # fight it.
       - CreateNamespace=false
       - ServerSideApply=true
     retry:
@@ -57,12 +60,12 @@ spec:
     - group: apps
       kind: Deployment
       name: nexamarket-backend
-      namespace: nexamarket
+      namespace: nexamarket-staging
       jsonPointers:
         - /spec/replicas
     - group: apps
       kind: Deployment
       name: nexamarket-frontend
-      namespace: nexamarket
+      namespace: nexamarket-staging
       jsonPointers:
         - /spec/replicas

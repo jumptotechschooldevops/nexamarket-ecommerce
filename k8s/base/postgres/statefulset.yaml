@@ -47,6 +47,12 @@ spec:
     spec:
       serviceAccountName: nexamarket-postgres
       automountServiceAccountToken: false
+      # The official postgres:16-alpine image is multi-arch, but pinning
+      # to the cluster's actual (amd64) worker nodes avoids ever scheduling
+      # onto an arch the EBS volume's attached node might not match in a
+      # mixed-architecture cluster later.
+      nodeSelector:
+        kubernetes.io/arch: amd64
       securityContext:
         runAsNonRoot: true
         runAsUser: 999

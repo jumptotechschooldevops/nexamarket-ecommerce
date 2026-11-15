@@ -26,7 +26,12 @@ data:
 
   # --- frontend (Nginx) ---
   # Consumed by frontend/nginx/default.conf.template via Nginx's built-in
-  # envsubst templating at container start (see frontend/Dockerfile). Must
-  # be "<service-name>.<namespace>.svc.cluster.local:<port>" so Nginx can
-  # resolve it via in-cluster DNS.
-  BACKEND_UPSTREAM: "nexamarket-backend.nexamarket.svc.cluster.local:4000"
+  # envsubst templating at container start (see frontend/Dockerfile).
+  # Deliberately just the short Service name, not a fully-qualified
+  # "<service>.<namespace>.svc.cluster.local" name: every Pod's resolv.conf
+  # search path already includes "<its-own-namespace>.svc.cluster.local",
+  # so the short name alone resolves correctly in whichever namespace an
+  # overlay actually deploys into (nexamarket-staging, nexamarket-production,
+  # ...) without this ConfigMap needing a per-overlay patch just to say
+  # the namespace twice.
+  BACKEND_UPSTREAM: "nexamarket-backend:4000"

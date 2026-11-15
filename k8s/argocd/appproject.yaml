@@ -1,9 +1,16 @@
 # Scopes what the two Applications below are allowed to do, rather than
 # leaving them on Argo CD's unrestricted "default" AppProject. Both
 # Applications reference this same project; it isn't split per-environment
-# because the restriction (this one repo, these kinds, these destinations)
-# is identical for both — only which destination/namespace each
-# Application actually targets differs.
+# because the restriction (this one repo, these kinds, this cluster) is
+# identical for both — only which namespace each Application targets
+# differs.
+#
+# Single EKS cluster for this masterclass ("testingfile", us-east-2,
+# account 668484272259) — Argo CD itself runs in-cluster there, so both
+# destinations below use the in-cluster API server address
+# (https://kubernetes.default.svc) and are told apart purely by namespace
+# (nexamarket-staging vs. nexamarket-production, set by each overlay's
+# own `namespace:` field — see overlays/*/kustomization.yaml).
 apiVersion: argoproj.io/v1alpha1
 kind: AppProject
 metadata:
@@ -13,13 +20,13 @@ spec:
   description: NexaMarket multi-vendor marketplace (frontend, backend, PostgreSQL)
 
   sourceRepos:
-    - "https://github.com/<GITHUB_ORG_PLACEHOLDER>/nexamarket-ecommerce.git"
+    - "https://github.com/jumptotechschooldevops/nexamarket-ecommerce.git"
 
   destinations:
-    - namespace: nexamarket
-      server: "<STAGING_EKS_CLUSTER_API_SERVER_PLACEHOLDER>"
-    - namespace: nexamarket
-      server: "<PRODUCTION_EKS_CLUSTER_API_SERVER_PLACEHOLDER>"
+    - namespace: nexamarket-staging
+      server: "https://kubernetes.default.svc"
+    - namespace: nexamarket-production
+      server: "https://kubernetes.default.svc"
 
   # Only the Kubernetes/AWS resource kinds this app actually uses — nothing
   # cluster-wide and unrelated (no RBAC, no CRDs other than the one

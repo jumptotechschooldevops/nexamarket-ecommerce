@@ -41,13 +41,17 @@ spec:
       restartPolicy: Never
       serviceAccountName: nexamarket-migration
       automountServiceAccountToken: false
+      # Same amd64 pin as the backend Deployment this Job shares an image
+      # with — see base/backend/deployment.yaml's comment.
+      nodeSelector:
+        kubernetes.io/arch: amd64
       securityContext:
         runAsNonRoot: true
         seccompProfile:
           type: RuntimeDefault
       containers:
         - name: seed
-          image: "<AWS_ACCOUNT_ID>.dkr.ecr.<AWS_REGION>.amazonaws.com/nexamarket-backend:<IMAGE_TAG>"
+          image: "668484272259.dkr.ecr.us-east-2.amazonaws.com/nexamarket-backend:<IMAGE_TAG>"
           imagePullPolicy: IfNotPresent
           command: ["node", "dist/db/seed/run-seed.js"]
           envFrom:

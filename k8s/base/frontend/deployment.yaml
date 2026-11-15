@@ -29,6 +29,10 @@ spec:
     spec:
       serviceAccountName: nexamarket-frontend
       automountServiceAccountToken: false
+      # See the matching comment in ../backend/deployment.yaml — same
+      # reasoning, same t3.medium (amd64) worker nodes.
+      nodeSelector:
+        kubernetes.io/arch: amd64
       securityContext:
         runAsNonRoot: true
         seccompProfile:
@@ -48,11 +52,12 @@ spec:
               app.kubernetes.io/name: nexamarket-frontend
       containers:
         - name: frontend
-          # ECR image placeholder — replaced per-overlay via Kustomize's
-          # images: transformer. VITE_API_URL is baked in at image build
-          # time (see frontend/Dockerfile ARG); only BACKEND_UPSTREAM is
+          # Account/region are real; only <IMAGE_TAG> is a placeholder —
+          # see the matching comment in ../backend/deployment.yaml.
+          # VITE_API_URL is baked in at image build time (see
+          # frontend/Dockerfile's ARG); only BACKEND_UPSTREAM is
           # runtime-configurable, via the ConfigMap below.
-          image: "<AWS_ACCOUNT_ID>.dkr.ecr.<AWS_REGION>.amazonaws.com/nexamarket-frontend:<IMAGE_TAG>"
+          image: "668484272259.dkr.ecr.us-east-2.amazonaws.com/nexamarket-frontend:<IMAGE_TAG>"
           imagePullPolicy: IfNotPresent
           ports:
             - name: http

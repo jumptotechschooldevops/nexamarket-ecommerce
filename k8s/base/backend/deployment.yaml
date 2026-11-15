@@ -32,6 +32,15 @@ spec:
     spec:
       serviceAccountName: nexamarket-backend
       automountServiceAccountToken: false
+      # Pinned explicitly: the cluster's two managed node group workers are
+      # t3.medium (amd64), and the images this Deployment references are
+      # built for linux/amd64 only (see demo-setup/workflows/release.yml's
+      # `docker buildx build --platform linux/amd64`). Without this, a
+      # future arm64/Graviton node added to the cluster could have this
+      # pod scheduled onto it and crash-loop with an "exec format error"
+      # instead of simply never being scheduled there.
+      nodeSelector:
+        kubernetes.io/arch: amd64
       securityContext:
         runAsNonRoot: true
         seccompProfile:
@@ -56,10 +65,11 @@ spec:
               app.kubernetes.io/name: nexamarket-backend
       containers:
         - name: backend
-          # ECR image placeholder — replaced per-overlay via Kustomize's
-          # images: transformer. Format matches what `docker build` in
-          # backend/Dockerfile produces.
-          image: "<AWS_ACCOUNT_ID>.dkr.ecr.<AWS_REGION>.amazonaws.com/nexamarket-backend:<IMAGE_TAG>"
+          # Account/region are real (668484272259, us-east-2 — the
+          # "testingfile" EKS cluster this is meant to deploy to); only
+          # <IMAGE_TAG> remains a placeholder, filled in per-deploy by
+          # demo-setup/workflows/release.yml's GitOps-update step.
+          image: "668484272259.dkr.ecr.us-east-2.amazonaws.com/nexamarket-backend:<IMAGE_TAG>"
           imagePullPolicy: IfNotPresent
           ports:
             - name: http

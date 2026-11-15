@@ -71,18 +71,28 @@ intentionally not here](#whats-intentionally-not-here) for what's left for the l
 Two Jobs run outside this request path, triggered by Argo CD sync hooks rather than traffic:
 `nexamarket-db-migrate` (always, `PreSync`) and `nexamarket-db-seed` (staging only, `PostSync`).
 
+**Infrastructure this actually targets**: a single Amazon EKS cluster named `testingfile`
+(account `668484272259`, region `us-east-2`), with two managed-node-group workers
+(`t3.medium`, amd64) and Argo CD already installed in it. Staging and production both deploy to
+*this same cluster* — see [Replica & autoscaling strategy](#replica--autoscaling-strategy) and
+the overlays' `kustomization.yaml` files for how they're kept apart by **namespace**
+(`nexamarket-staging` / `nexamarket-production`) rather than by separate clusters. Every pod
+spec in `base/` carries `nodeSelector: {kubernetes.io/arch: amd64}` to match these specific
+workers — see [Validation performed](#validation-performed) for how that (and everything else)
+was checked.
+
 ## Prerequisites (cluster add-ons)
 
-None of these are created by this directory — they're assumed to already exist on the target
-EKS cluster(s) before Argo CD syncs these manifests:
+None of these are created by this directory. On the `testingfile` cluster, as of this write-up:
 
-| Add-on | Needed for |
-|---|---|
-| [AWS EBS CSI driver](https://docs.aws.amazon.com/eks/latest/userguide/ebs-csi.html) | `base/storageclass.yaml` and the PostgreSQL `volumeClaimTemplates` |
-| [AWS Load Balancer Controller](https://kubernetes-sigs.github.io/aws-load-balancer-controller/) | `base/ingress.yaml` (provisions the real ALB) |
-| [metrics-server](https://github.com/kubernetes-sigs/metrics-server) | `base/backend/hpa.yaml`, `base/frontend/hpa.yaml` (CPU/memory metrics) |
-| [Argo CD](https://argo-cd.readthedocs.io/) | everything under `argocd/` |
-| [Prometheus Operator](https://github.com/prometheus-operator/prometheus-operator) *(optional)* | `components/monitoring/` only — the `ServiceMonitor` CRD |
+| Add-on | Needed for | Status on `testingfile` |
+|---|---|---|
+| VPC CNI, CoreDNS, kube-proxy | basic pod networking/DNS for everything | ✅ confirmed working |
+| [metrics-server](https://github.com/kubernetes-sigs/metrics-server) | `base/backend/hpa.yaml`, `base/frontend/hpa.yaml` (CPU/memory metrics) | ✅ confirmed working |
+| [Argo CD](https://argo-cd.readthedocs.io/) | everything under `argocd/` | ✅ installed, all 7 pods Ready |
+| [AWS EBS CSI driver](https://docs.aws.amazon.com/eks/latest/userguide/ebs-csi.html) (`ebs.csi.aws.com`) | `base/storageclass.yaml` and the PostgreSQL `volumeClaimTemplates` | ⬜ to be installed live — see `MASTERCLASS.md` |
+| [AWS Load Balancer Controller](https://kubernetes-sigs.github.io/aws-load-balancer-controller/) | `base/ingress.yaml` (provisions the real ALB) | ⬜ to be installed live — see `MASTERCLASS.md` |
+| [Prometheus Operator](https://github.com/prometheus-operator/prometheus-operator) *(optional)* | `components/monitoring/` only — the `ServiceMonitor` CRD | ⬜ not required unless the monitoring component is used |
 
 ## Directory reference
 
@@ -168,27 +178,26 @@ directly, not `/api/health`.
 
 ## Placeholders you must replace
 
-Nothing below is a real value — all of it is a template. Search the directory for these exact
-strings before applying anything for real:
+Now that the target infrastructure is known, several placeholders from the first draft of this
+directory have been resolved to real values directly in the manifests: the AWS account ID
+(`668484272259`), region (`us-east-2`), the GitHub org (`jumptotechschooldevops`), and the Argo CD
+destination server (`https://kubernetes.default.svc`, since this is a single-cluster setup — see
+[Architecture](#architecture)). What's left is genuinely not knowable yet — no ECR image has been
+built, and no domain/certificate has been provisioned:
 
 | Placeholder | Appears in | Replace with |
 |---|---|---|
-| `<AWS_ACCOUNT_ID>` | `base/kustomization.yaml`, `base/backend/deployment.yaml`, `base/frontend/deployment.yaml`, `base/jobs/migrate-job.yaml`, `components/seed-data/seed-job.yaml` | your AWS account ID |
-| `<AWS_REGION>` | same files as above | the AWS region your ECR repos and EKS cluster live in |
-| `<IMAGE_TAG>` | same files as above | the image tag to deploy (a Git SHA or semver tag your CI pushes) |
+| `<IMAGE_TAG>` | `base/kustomization.yaml`, `base/backend/deployment.yaml`, `base/frontend/deployment.yaml`, `base/jobs/migrate-job.yaml`, `components/seed-data/seed-job.yaml` | the image tag to deploy — filled in automatically by `demo-setup/workflows/release.yml`'s GitOps-update step once that workflow is activated, or manually via `kustomize edit set image` in the meantime |
 | `<DOMAIN_NAME_PLACEHOLDER>` | `base/ingress.yaml`, `overlays/production/{configmap,ingress}-patch.yaml` | the production public hostname |
 | `<STAGING_DOMAIN_NAME_PLACEHOLDER>` | `overlays/staging/{configmap,ingress}-patch.yaml` | the staging hostname |
 | `<ACM_CERTIFICATE_ARN_PLACEHOLDER>` | `base/ingress.yaml` | an ACM certificate ARN (base's own value; overridden per-overlay below) |
 | `<PRODUCTION_ACM_CERTIFICATE_ARN_PLACEHOLDER>` | `overlays/production/ingress-patch.yaml` | production's ACM certificate ARN |
 | `<STAGING_ACM_CERTIFICATE_ARN_PLACEHOLDER>` | `overlays/staging/ingress-patch.yaml` | staging's ACM certificate ARN |
-| `<GITHUB_ORG_PLACEHOLDER>` | `argocd/*.yaml` | the GitHub org/user this repo lives under |
-| `<STAGING_EKS_CLUSTER_API_SERVER_PLACEHOLDER>` | `argocd/appproject.yaml`, `argocd/application-staging.yaml` | staging EKS cluster's API server URL (or `https://kubernetes.default.svc` if Argo CD runs in-cluster there) |
-| `<PRODUCTION_EKS_CLUSTER_API_SERVER_PLACEHOLDER>` | `argocd/appproject.yaml`, `argocd/application-production.yaml` | production EKS cluster's API server URL |
 
 A quick way to find every remaining placeholder before a real deploy:
 
 ```bash
-grep -rn "PLACEHOLDER\|<AWS_ACCOUNT_ID>\|<AWS_REGION>\|<IMAGE_TAG>" k8s/
+grep -rn "PLACEHOLDER\|<IMAGE_TAG>" k8s/
 ```
 
 ## Secrets
@@ -213,6 +222,10 @@ user/password/db) — nothing here assembles one from the other automatically; a
 (Helm, External Secrets, a Vault agent sidecar) would normally do that for you.
 
 ## Replica & autoscaling strategy
+
+Both environments run on the same two `t3.medium` workers, in separate namespaces — there's no
+separate staging cluster to absorb load differently, so these numbers also double as the two
+environments' resource budget on shared hardware.
 
 - **Production**: fixed at **3 backend + 3 frontend** replicas (`overlays/production/kustomization.yaml`'s
   `replicas:` block), with the HPA's `minReplicas` patched to match (3) so the HPA only ever scales
@@ -287,17 +300,24 @@ the Security Group AWS attaches to it, a layer below what Kubernetes NetworkPoli
 
 ## Deploying via Argo CD
 
-This section describes the intended flow; **none of it was run against a real cluster while
-building this** (see [Validation performed](#validation-performed)).
+**`MASTERCLASS.md` (repo root) is the authoritative, exact-command runbook for this** — from
+confirming cluster access through to watching Argo CD sync both environments. The summary:
 
-1. Install Argo CD and the cluster add-ons listed in [Prerequisites](#prerequisites-cluster-add-ons).
-2. Replace every placeholder listed [above](#placeholders-you-must-replace).
-3. Replace `base/secret.yaml` with a real secret-management integration (see [Secrets](#secrets))
-   — never apply the template file's literal `REPLACE_ME_...` values.
-4. Apply the AppProject once per Argo CD instance: `kubectl apply -f k8s/argocd/appproject.yaml`.
-5. Apply the Application(s) for whichever environment(s) you're bootstrapping:
-   `kubectl apply -f k8s/argocd/application-staging.yaml` and/or `application-production.yaml`.
-6. Argo CD takes it from there: clones the repo, runs `kustomize build` on the overlay path, and
+1. Install the two add-ons not yet on `testingfile`: the AWS EBS CSI driver and the AWS Load
+   Balancer Controller (both via Helm, with IRSA roles — exact commands in `MASTERCLASS.md`).
+2. Create the real ECR repositories, the GitHub OIDC trust relationship and IAM role (see
+   `demo-setup/aws/`), and the GitHub Secrets/Variables (see `demo-setup/github-secrets-and-variables.md`).
+3. Create the real Kubernetes Secrets in both namespaces (see
+   `demo-setup/kubernetes-secrets-setup.md`) — never apply `base/secret.yaml`'s literal
+   `REPLACE_ME_...` template values.
+4. Replace the remaining placeholders listed [above](#placeholders-you-must-replace) (domain,
+   certificate ARN).
+5. Apply the AppProject once: `kubectl apply -f k8s/argocd/appproject.yaml`.
+6. Apply both Applications: `kubectl apply -f k8s/argocd/application-staging.yaml -f k8s/argocd/application-production.yaml`.
+7. Promote the workflow templates from `demo-setup/workflows/` into `.github/workflows/` to go
+   live, open a PR (triggers CI), then merge (triggers the release workflow, which builds, scans,
+   pushes to ECR, and updates the image tag in Git — which is what Argo CD actually syncs on).
+8. Argo CD takes it from there: clones the repo, runs `kustomize build` on each overlay path, and
    applies the result — running `nexamarket-db-migrate` as a `PreSync` hook before anything else,
    and (staging only) `nexamarket-db-seed` as a `PostSync` hook after.
 
@@ -311,26 +331,34 @@ a live cluster even by accident):
 
 ```bash
 # Every overlay builds without error
-kubectl kustomize k8s/base               # 26 resources, 0 errors
-kubectl kustomize k8s/overlays/staging   # 26 resources (incl. the seed Job), 0 errors
+kubectl kustomize k8s/base                 # 26 resources, 0 errors
+kubectl kustomize k8s/overlays/staging     # 27 resources (incl. the seed Job), 0 errors
 kubectl kustomize k8s/overlays/production  # 28 resources (incl. the ServiceMonitor), 0 errors
 
-# Every built-in Kubernetes resource (everything except the Argo CD
-# Application/AppProject and the ServiceMonitor, which need their CRDs
-# installed to resource-map against) passes client-side schema validation
+# Every built-in Kubernetes resource passes client-side schema validation
+# (this kubectl install happens to have cached OpenAPI/discovery info for
+# the argoproj.io CRDs too, from prior unrelated use on this machine, so
+# the Application/AppProject docs validated fully as well; the
+# ServiceMonitor's CRD group wasn't cached, so it fails at the expected
+# "no matches for kind — ensure CRDs are installed first" step instead,
+# which still proves the YAML/structure itself is sound):
 kubectl apply --dry-run=client -f <(kubectl kustomize k8s/base)
 kubectl apply --dry-run=client -f <(kubectl kustomize k8s/overlays/staging)
 kubectl apply --dry-run=client -f <(kubectl kustomize k8s/overlays/production)   # ServiceMonitor doc filtered out first
-
-# The Argo CD and ServiceMonitor manifests were confirmed to be structurally
-# valid YAML that kubectl decodes correctly — they fail only at the expected
-# "no matches for kind X — ensure CRDs are installed first" step, which is
-# exactly what happens with any valid CRD-backed manifest on a cluster
-# that doesn't have that CRD, proving the YAML/structure itself is sound:
+kubectl apply --dry-run=client -f k8s/argocd/appproject.yaml
 kubectl apply --dry-run=client -f k8s/argocd/application-staging.yaml
 kubectl apply --dry-run=client -f k8s/argocd/application-production.yaml
-kubectl apply --dry-run=client -f k8s/argocd/appproject.yaml
 kubectl apply --dry-run=client -f k8s/components/monitoring/servicemonitor.yaml
+
+# Confirmed the per-overlay namespace rename actually works as intended —
+# Kustomize's `namespace:` field both renames base/namespace.yaml's
+# Namespace object itself and sets metadata.namespace everywhere else:
+kubectl kustomize k8s/overlays/staging    | grep -A8 '^kind: Namespace'    # -> name: nexamarket-staging
+kubectl kustomize k8s/overlays/production | grep -A8 '^kind: Namespace'    # -> name: nexamarket-production
+
+# Confirmed every workload's nodeSelector actually resolves to amd64 (one
+# per: backend, frontend, postgres, migrate Job, seed Job):
+kubectl kustomize k8s/overlays/staging | grep -c 'kubernetes.io/arch: amd64'   # -> 5
 ```
 
 All of the above passed with zero errors on every file in this directory. **Not run, and
@@ -345,22 +373,26 @@ require a live cluster context), `argocd app sync`, or provisioning any AWS reso
 | Backend pods `CrashLoopBackOff` immediately, log says "Invalid environment configuration" | `JWT_SECRET` missing or under 16 characters, or `DATABASE_URL` missing | `base/secret.yaml` wasn't replaced with real values — see [Secrets](#secrets) |
 | Backend pods `Running` but never `Ready` | `/ready` is failing — almost always PostgreSQL unreachable | Check `nexamarket-postgres` pod status and the `allow-ingress-to-postgres` NetworkPolicy's `podSelector` labels still match |
 | `nexamarket-db-migrate` Job never completes, Argo CD sync hangs on PreSync | Same as above, or the image doesn't actually contain `dist/db/migrate.js` | Confirm the ECR image tag was built from a backend image whose `npm run build` succeeded (see repo root `backend/Dockerfile`) |
-| ALB never gets provisioned / Ingress has no address | AWS Load Balancer Controller not installed, or `<ACM_CERTIFICATE_ARN_PLACEHOLDER>` / `<DOMAIN_NAME_PLACEHOLDER>` never replaced | `kubectl describe ingress nexamarket-ingress -n nexamarket` for the controller's own events |
-| PVC stuck `Pending` | `WaitForFirstConsumer` means it won't bind until the StatefulSet's pod is scheduled — check that pod's events first, not the PVC's | `kubectl describe pod nexamarket-postgres-0 -n nexamarket` |
+| ALB never gets provisioned / Ingress has no address | AWS Load Balancer Controller not installed, or `<ACM_CERTIFICATE_ARN_PLACEHOLDER>` / `<DOMAIN_NAME_PLACEHOLDER>` never replaced | `kubectl describe ingress nexamarket-ingress -n nexamarket-production` (or `-staging`) for the controller's own events |
+| PVC stuck `Pending` | `WaitForFirstConsumer` means it won't bind until the StatefulSet's pod is scheduled — check that pod's events first, not the PVC's | `kubectl describe pod nexamarket-postgres-0 -n nexamarket-production` |
+| Pod stuck `Pending`, event says no nodes match node affinity/selector | Scheduled against a non-amd64 node, or the `kubernetes.io/arch: amd64` nodeSelector doesn't match any node's actual label | `kubectl get nodes --show-labels \| grep kubernetes.io/arch` — both `testingfile` workers should show `amd64` |
 | Argo CD shows `OutOfSync` on `spec.replicas` forever | `ignoreDifferences` missing or misconfigured for that Deployment | Compare against `argocd/application-*.yaml` |
-| `kubectl apply --dry-run=client` errors "no matches for kind ... ensure CRDs are installed first" on `Application`/`AppProject`/`ServiceMonitor` | Expected on any cluster/machine without that CRD registered | Not an error in the manifest — see [Validation performed](#validation-performed) |
+| `kubectl apply --dry-run=client` errors "no matches for kind ... ensure CRDs are installed first" on `ServiceMonitor` | Expected on a cluster without Prometheus Operator's CRDs installed | Not an error in the manifest — see [Validation performed](#validation-performed) |
 
 ## What's intentionally not here
 
 Per this phase's scope:
 
-- **No GitHub Actions / CI workflow** — the masterclass implements CI live, on top of this
-  directory.
-- **No AWS resources were created** — no ECR repo, no EKS cluster, no ACM certificate, no IAM
-  role. Every AWS-specific value is a placeholder (see [above](#placeholders-you-must-replace)).
+- **No GitHub Actions / CI workflow is *active*** — `demo-setup/workflows/ci.yml` and
+  `release.yml` exist as templates, not yet copied into `.github/workflows/` where GitHub would
+  actually run them. See `MASTERCLASS.md` for the exact moment they get promoted, live.
+- **No AWS resources were created** — no ECR repo, no ACM certificate, no IAM role, no OIDC
+  provider trust relationship, no Kubernetes Secret. `demo-setup/aws/` and the two
+  `demo-setup/*-setup.md` files document the exact commands for all of these; none have been run.
 - **Nothing was deployed to any Kubernetes cluster** — see [Validation performed](#validation-performed)
   for exactly what checks *were* run, all of them offline.
 
-The DevOps/SRE team owns turning the placeholders into real values, standing up the cluster
-add-ons, wiring real secrets, and running the first `argocd app sync` — consistent with the repo
-root `README.md`'s own "Handover to DevOps" section for everything upstream of this directory.
+The DevOps/SRE team (or the masterclass's live walkthrough — see `MASTERCLASS.md`) owns running
+those commands for real, wiring real secrets, and triggering the first Argo CD sync — consistent
+with the repo root `README.md`'s own "Handover to DevOps" section for everything upstream of this
+directory.
