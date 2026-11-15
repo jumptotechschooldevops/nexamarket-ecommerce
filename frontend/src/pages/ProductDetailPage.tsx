@@ -1,9 +1,10 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { ProductsApi } from '../api/endpoints';
 import { ApiError } from '../api/client';
-import { useAuth } from '../context/AuthContext';
-import { useCart } from '../context/CartContext';
+import { useAuth } from '../context/useAuth';
+import { useCart } from '../context/useCart';
+import { useAsync } from '../hooks/useAsync';
 import { LoadingState } from '../components/LoadingState';
 import type { Product } from '../types';
 import { formatMoney } from '../utils/format';
@@ -14,20 +15,15 @@ export function ProductDetailPage() {
   const { addItem } = useCart();
   const navigate = useNavigate();
 
-  const [product, setProduct] = useState<Product | null>(null);
-  const [loading, setLoading] = useState(true);
   const [quantity, setQuantity] = useState(1);
   const [message, setMessage] = useState<{ type: 'success' | 'danger'; text: string } | null>(null);
   const [adding, setAdding] = useState(false);
 
-  useEffect(() => {
-    if (!id) return;
-    setLoading(true);
-    ProductsApi.get(id)
-      .then((res) => setProduct(res.product))
-      .catch(() => setProduct(null))
-      .finally(() => setLoading(false));
-  }, [id]);
+  const fetchProduct = useCallback(
+    () => (id ? ProductsApi.get(id).then((res) => res.product) : Promise.resolve(null)),
+    [id],
+  );
+  const { data: product, loading } = useAsync<Product | null>(id ?? '', fetchProduct, null);
 
   async function handleAddToCart() {
     if (!product) return;

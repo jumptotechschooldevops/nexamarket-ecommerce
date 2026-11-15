@@ -1,61 +1,52 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useCallback, useMemo, type ReactNode } from 'react';
 import { CartApi } from '../api/endpoints';
 import type { Cart } from '../types';
-import { useAuth } from './AuthContext';
-
-interface CartContextValue {
-  cart: Cart | null;
-  loading: boolean;
-  error: string | null;
-  refresh: () => Promise<void>;
-  addItem: (productId: string, quantity: number) => Promise<void>;
-  updateItem: (itemId: string, quantity: number) => Promise<void>;
-  removeItem: (itemId: string) => Promise<void>;
-}
-
-const CartContext = createContext<CartContextValue | undefined>(undefined);
+import { useAuth } from './useAuth';
+import { useAsync } from '../hooks/useAsync';
+import { CartContext } from './cartContextObject';
 
 export function CartProvider({ children }: { children: ReactNode }) {
   const { user } = useAuth();
-  const [cart, setCart] = useState<Cart | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const isCustomer = Boolean(user && user.role === 'customer');
+  // Keying the fetch by the signed-in customer (rather than just "logged in or
+  // not") means switching accounts correctly triggers a fresh fetch too.
+  const cartKey = isCustomer ? `customer:${user!.id}` : 'none';
+
+  const fetchCart = useCallback(async (): Promise<Cart | null> => {
+    if (!isCustomer) return null;
+    const res = await CartApi.get();
+    return res.cart;
+  }, [isCustomer]);
+
+  const { data: cart, loading, error, setData } = useAsync<Cart | null>(cartKey, fetchCart, null);
 
   const refresh = useCallback(async () => {
-    if (!user || user.role !== 'customer') {
-      setCart(null);
-      return;
-    }
-    setLoading(true);
-    setError(null);
-    try {
-      const res = await CartApi.get();
-      setCart(res.cart);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load cart');
-    } finally {
-      setLoading(false);
-    }
-  }, [user]);
+    setData(await fetchCart());
+  }, [fetchCart, setData]);
 
-  useEffect(() => {
-    void refresh();
-  }, [refresh]);
+  const addItem = useCallback(
+    async (productId: string, quantity: number) => {
+      const res = await CartApi.addItem(productId, quantity);
+      setData(res.cart);
+    },
+    [setData],
+  );
 
-  const addItem = useCallback(async (productId: string, quantity: number) => {
-    const res = await CartApi.addItem(productId, quantity);
-    setCart(res.cart);
-  }, []);
+  const updateItem = useCallback(
+    async (itemId: string, quantity: number) => {
+      const res = await CartApi.updateItem(itemId, quantity);
+      setData(res.cart);
+    },
+    [setData],
+  );
 
-  const updateItem = useCallback(async (itemId: string, quantity: number) => {
-    const res = await CartApi.updateItem(itemId, quantity);
-    setCart(res.cart);
-  }, []);
-
-  const removeItem = useCallback(async (itemId: string) => {
-    const res = await CartApi.removeItem(itemId);
-    setCart(res.cart);
-  }, []);
+  const removeItem = useCallback(
+    async (itemId: string) => {
+      const res = await CartApi.removeItem(itemId);
+      setData(res.cart);
+    },
+    [setData],
+  );
 
   const value = useMemo(
     () => ({ cart, loading, error, refresh, addItem, updateItem, removeItem }),
@@ -63,12 +54,4 @@ export function CartProvider({ children }: { children: ReactNode }) {
   );
 
   return <CartContext.Provider value={value}>{children}</CartContext.Provider>;
-}
-
-export function useCart(): CartContextValue {
-  const ctx = useContext(CartContext);
-  if (!ctx) {
-    throw new Error('useCart must be used within a CartProvider');
-  }
-  return ctx;
 }

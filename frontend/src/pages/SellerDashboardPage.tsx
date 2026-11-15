@@ -18,8 +18,10 @@ export function SellerDashboardPage() {
   const [loading, setLoading] = useState(true);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
 
+  // `loading` starts true (above) so the very first load can show a spinner
+  // without this function ever needing to flip it synchronously; later calls
+  // from event handlers (after a mutation) just refresh the data in place.
   async function loadAll() {
-    setLoading(true);
     try {
       const [summaryRes, productsRes, ordersRes, categoriesRes] = await Promise.all([
         SellersApi.mySummary(),
@@ -37,7 +39,9 @@ export function SellerDashboardPage() {
   }
 
   useEffect(() => {
-    void loadAll();
+    // loadAll's own try/finally already clears `loading`; this catch only
+    // prevents an unhandled-rejection console warning if the initial load fails.
+    loadAll().catch(() => {});
   }, []);
 
   async function handleStockUpdate(productId: string, quantity: number) {

@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { CategoriesApi, ProductsApi } from '../api/endpoints';
 import { ProductCard } from '../components/ProductCard';
 import { Pagination } from '../components/Pagination';
 import { LoadingState, EmptyState } from '../components/LoadingState';
+import { useAsync } from '../hooks/useAsync';
 import type { Category, PaginationMeta, Product } from '../types';
 
 const SORT_OPTIONS = [
@@ -13,19 +14,26 @@ const SORT_OPTIONS = [
   { value: 'rating', label: 'Top Rated' },
 ];
 
+interface ProductListResult {
+  products: Product[];
+  meta: PaginationMeta | null;
+}
+
+const EMPTY_RESULT: ProductListResult = { products: [], meta: null };
+
 export function ProductsPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const [categories, setCategories] = useState<Category[]>([]);
-  const [products, setProducts] = useState<Product[]>([]);
-  const [meta, setMeta] = useState<PaginationMeta | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [minPrice, setMinPrice] = useState('');
-  const [maxPrice, setMaxPrice] = useState('');
 
   const q = searchParams.get('q') ?? '';
   const categorySlug = searchParams.get('category') ?? '';
   const sort = searchParams.get('sort') ?? 'newest';
   const page = Number(searchParams.get('page') ?? '1');
+  const minPriceParam = searchParams.get('minPrice') ?? '';
+  const maxPriceParam = searchParams.get('maxPrice') ?? '';
+
+  const [minPriceInput, setMinPriceInput] = useState(minPriceParam);
+  const [maxPriceInput, setMaxPriceInput] = useState(maxPriceParam);
 
   useEffect(() => {
     CategoriesApi.list().then((res) => setCategories(res.categories));
@@ -36,23 +44,20 @@ export function ProductsPage() {
     [categories, categorySlug],
   );
 
-  useEffect(() => {
-    setLoading(true);
-    ProductsApi.list({
+  const fetchProducts = useCallback((): Promise<ProductListResult> => {
+    return ProductsApi.list({
       q: q || undefined,
       category: selectedCategory?.id,
       sort,
       page,
-      minPrice: minPrice ? Number(minPrice) : undefined,
-      maxPrice: maxPrice ? Number(maxPrice) : undefined,
-    })
-      .then((res) => {
-        setProducts(res.products);
-        setMeta(res.meta);
-      })
-      .finally(() => setLoading(false));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [q, categorySlug, selectedCategory?.id, sort, page]);
+      minPrice: minPriceParam ? Number(minPriceParam) : undefined,
+      maxPrice: maxPriceParam ? Number(maxPriceParam) : undefined,
+    });
+  }, [q, selectedCategory?.id, sort, page, minPriceParam, maxPriceParam]);
+
+  const fetchKey = [q, categorySlug, sort, page, minPriceParam, maxPriceParam].join('|');
+  const { data, loading } = useAsync<ProductListResult>(fetchKey, fetchProducts, EMPTY_RESULT);
+  const { products, meta } = data;
 
   function updateParam(key: string, value: string) {
     const next = new URLSearchParams(searchParams);
@@ -65,9 +70,13 @@ export function ProductsPage() {
     setSearchParams(next);
   }
 
-  function applyPriceFilter(e: React.FormEvent) {
+  function applyPriceFilter(e: FormEvent) {
     e.preventDefault();
     const next = new URLSearchParams(searchParams);
+    if (minPriceInput) next.set('minPrice', minPriceInput);
+    else next.delete('minPrice');
+    if (maxPriceInput) next.set('maxPrice', maxPriceInput);
+    else next.delete('maxPrice');
     next.delete('page');
     setSearchParams(next);
   }
@@ -107,16 +116,16 @@ export function ProductsPage() {
               <input
                 type="number"
                 placeholder="Min"
-                value={minPrice}
+                value={minPriceInput}
                 min={0}
-                onChange={(e) => setMinPrice(e.target.value)}
+                onChange={(e) => setMinPriceInput(e.target.value)}
               />
               <input
                 type="number"
                 placeholder="Max"
-                value={maxPrice}
+                value={maxPriceInput}
                 min={0}
-                onChange={(e) => setMaxPrice(e.target.value)}
+                onChange={(e) => setMaxPriceInput(e.target.value)}
               />
             </form>
             <button className="btn btn-outline btn-sm mt-lg" onClick={applyPriceFilter} type="button">

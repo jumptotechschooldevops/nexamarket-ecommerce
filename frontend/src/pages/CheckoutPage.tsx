@@ -2,7 +2,7 @@ import { useState, type FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { OrdersApi } from '../api/endpoints';
 import { ApiError } from '../api/client';
-import { useCart } from '../context/CartContext';
+import { useCart } from '../context/useCart';
 import { formatMoney } from '../utils/format';
 
 export function CheckoutPage() {
