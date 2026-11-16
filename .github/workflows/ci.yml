@@ -9,7 +9,6 @@ on:
 
 permissions:
   contents: read
-  id-token: write
 
 env:
   AWS_REGION: us-east-1
@@ -116,15 +115,57 @@ jobs:
 
     if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
 
+    permissions:
+      contents: read
+      id-token: write
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+
+      - name: Debug OIDC claims
+        shell: bash
+        run: |
+          TOKEN=$(curl -fsS \
+            -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+            "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=sts.amazonaws.com" \
+            | jq -er '.value')
+
+          echo "::add-mask::$TOKEN"
+          export TOKEN
+
+          python3 - <<'PY'
+          import os
+          import json
+          import base64
+
+          payload = os.environ["TOKEN"].split(".")[1]
+          payload += "=" * (-len(payload) % 4)
+          claims = json.loads(base64.urlsafe_b64decode(payload))
+
+          for key in [
+              "iss",
+              "aud",
+              "sub",
+              "repository",
+              "repository_id",
+              "repository_owner_id",
+              "ref",
+              "event_name"
+          ]:
+              print(f"{key}: {claims.get(key)}")
+          PY
+
+          unset TOKEN
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
+
+      - name: Verify AWS authentication
+        run: aws sts get-caller-identity
 
       - name: Login to Amazon ECR
         id: login-ecr
