@@ -9,7 +9,6 @@ on:
 
 permissions:
   contents: read
-  id-token: write
 
 env:
   AWS_REGION: us-east-1
@@ -78,27 +77,129 @@ jobs:
     name: SonarQube Code Quality
     runs-on: ubuntu-latest
 
+    env:
+      SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+      SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
+      - name: Debug SonarQube configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          echo "===== 1. CHECK GITHUB SECRETS ====="
+
+          if [ -z "$SONAR_TOKEN" ]; then
+            echo "ERROR: SONAR_TOKEN is missing"
+            exit 1
+          fi
+
+          echo "SUCCESS: SONAR_TOKEN exists"
+
+          if [ -z "$SONAR_HOST_URL" ]; then
+            echo "ERROR: SONAR_HOST_URL is missing"
+            exit 1
+          fi
+
+          echo "SUCCESS: SONAR_HOST_URL exists"
+
+          echo "===== 2. CHECK URL FORMAT ====="
+
+          case "$SONAR_HOST_URL" in
+            https://*|http://*)
+              echo "SUCCESS: URL format is correct"
+              ;;
+            *)
+              echo "ERROR: Invalid URL scheme"
+              exit 1
+              ;;
+          esac
+
+          BASE_URL="${SONAR_HOST_URL%/}"
+
+          echo "===== 3. CHECK SERVER CONNECTIVITY ====="
+
+          curl -fsS --connect-timeout 10 --max-time 30 \
+            "$BASE_URL/api/system/status" \
+            | jq -e '.status == "UP"'
+
+          echo "SUCCESS: SonarQube server is UP"
+
+          echo "===== 4. CHECK TOKEN AUTHENTICATION ====="
+
+          HTTP_CODE=$(curl -sS \
+            --connect-timeout 10 \
+            --max-time 30 \
+            -u "$SONAR_TOKEN:" \
+            -o /tmp/sonar-auth.json \
+            -w '%{http_code}' \
+            "$BASE_URL/api/authentication/validate")
+
+          echo "HTTP status: $HTTP_CODE"
+
+          if [ "$HTTP_CODE" != "200" ]; then
+            echo "ERROR: SonarQube authentication request failed"
+            exit 1
+          fi
+
+          if ! jq -e '.valid == true' /tmp/sonar-auth.json; then
+            echo "ERROR: SonarQube rejected the token"
+            exit 1
+          fi
+
+          echo "SUCCESS: SonarQube token is valid"
+
+          echo "===== 5. CHECK PROJECT CONFIGURATION ====="
+
+          for DIR in frontend backend; do
+            FILE="$DIR/sonar-project.properties"
+
+            if [ ! -f "$FILE" ]; then
+              echo "ERROR: Missing $FILE"
+              exit 1
+            fi
+
+            echo "Checking $FILE"
+            grep '^sonar.projectKey=' "$FILE"
+
+            KEY=$(sed -n 's/^sonar.projectKey=//p' "$FILE" | tr -d '\r')
+
+            HTTP_CODE=$(curl -sS \
+              --connect-timeout 10 \
+              --max-time 30 \
+              -u "$SONAR_TOKEN:" \
+              --get \
+              --data-urlencode "component=$KEY" \
+              -o /tmp/sonar-project.json \
+              -w '%{http_code}' \
+              "$BASE_URL/api/components/show")
+
+            echo "Project: $KEY"
+            echo "HTTP status: $HTTP_CODE"
+
+            if [ "$HTTP_CODE" != "200" ]; then
+              echo "WARNING: Project visibility or existence check failed"
+            fi
+          done
+
+          echo "===== DIAGNOSTICS COMPLETED ====="
+
       - name: SonarQube Frontend
         uses: SonarSource/sonarqube-scan-action@v5
         with:
           projectBaseDir: frontend
-        env:
-          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
+          args: -X
 
       - name: SonarQube Backend
         uses: SonarSource/sonarqube-scan-action@v5
         with:
           projectBaseDir: backend
-        env:
-          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
+          args: -X
 
   review:
     name: CI Review
@@ -116,15 +217,59 @@ jobs:
 
     if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
 
+    permissions:
+      contents: read
+      id-token: write
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+
+      - name: Debug OIDC claims
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          TOKEN=$(curl -fsS \
+            -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+            "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=sts.amazonaws.com" \
+            | jq -er '.value')
+
+          echo "::add-mask::$TOKEN"
+          export TOKEN
+
+          python3 - <<'PY'
+          import os
+          import json
+          import base64
+
+          payload = os.environ["TOKEN"].split(".")[1]
+          payload += "=" * (-len(payload) % 4)
+          claims = json.loads(base64.urlsafe_b64decode(payload))
+
+          for key in [
+              "iss",
+              "aud",
+              "sub",
+              "repository",
+              "repository_id",
+              "repository_owner_id",
+              "ref",
+              "event_name"
+          ]:
+              print(f"{key}: {claims.get(key)}")
+          PY
+
+          unset TOKEN
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
+
+      - name: Verify AWS authentication
+        run: aws sts get-caller-identity
 
       - name: Login to Amazon ECR
         id: login-ecr
