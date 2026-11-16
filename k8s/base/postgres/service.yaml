@@ -1,0 +1,43 @@
+# Headless Service (clusterIP: None): required by the StatefulSet's
+# spec.serviceName — this is what gives each pod its stable DNS name
+# (nexamarket-postgres-0.nexamarket-postgres-headless.nexamarket.svc.cluster.local),
+# not something application code is expected to connect to directly.
+apiVersion: v1
+kind: Service
+metadata:
+  name: nexamarket-postgres-headless
+  namespace: nexamarket
+  labels:
+    app.kubernetes.io/name: nexamarket-postgres
+    app.kubernetes.io/part-of: nexamarket
+spec:
+  clusterIP: None
+  selector:
+    app.kubernetes.io/name: nexamarket-postgres
+  ports:
+    - name: postgres
+      port: 5432
+      targetPort: postgres
+---
+# Regular ClusterIP Service: the stable DNS name
+# (nexamarket-postgres.nexamarket.svc.cluster.local) the backend's
+# DATABASE_URL and the migration/seed Jobs actually connect to. Safe to
+# treat as "the database" only because there is exactly one replica behind
+# it — with more than one replica this would load-balance reads and writes
+# across independent, non-replicated Postgres instances, which is wrong.
+apiVersion: v1
+kind: Service
+metadata:
+  name: nexamarket-postgres
+  namespace: nexamarket
+  labels:
+    app.kubernetes.io/name: nexamarket-postgres
+    app.kubernetes.io/part-of: nexamarket
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: nexamarket-postgres
+  ports:
+    - name: postgres
+      port: 5432
+      targetPort: postgres

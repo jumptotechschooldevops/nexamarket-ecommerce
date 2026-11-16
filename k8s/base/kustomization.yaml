@@ -1,0 +1,38 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - namespace.yaml
+  - configmap.yaml
+  - secret.yaml
+  - storageclass.yaml
+  - serviceaccounts.yaml
+  - networkpolicy.yaml
+  - ingress.yaml
+  - postgres/service.yaml
+  - postgres/statefulset.yaml
+  - backend/deployment.yaml
+  - backend/service.yaml
+  - backend/hpa.yaml
+  - backend/pdb.yaml
+  - frontend/deployment.yaml
+  - frontend/service.yaml
+  - frontend/hpa.yaml
+  - frontend/pdb.yaml
+  - jobs/migrate-job.yaml
+  # The optional demo-data seed Job lives at
+  # k8s/components/seed-data/seed-job.yaml, packaged as a Kustomize
+  # Component rather than a resource here — see that directory's
+  # kustomization.yaml for why, and overlays/staging/kustomization.yaml for
+  # where it's opted into.
+
+# Keeps the placeholder ECR image references in one place that both
+# overlays override via their own `images:` block, rather than each overlay
+# needing a JSON6902/strategic-merge patch just to change a string.
+images:
+  - name: "668484272259.dkr.ecr.us-east-2.amazonaws.com/nexamarket-backend"
+    newName: "668484272259.dkr.ecr.us-east-2.amazonaws.com/nexamarket-backend"
+    newTag: "<IMAGE_TAG>"
+  - name: "668484272259.dkr.ecr.us-east-2.amazonaws.com/nexamarket-frontend"
+    newName: "668484272259.dkr.ecr.us-east-2.amazonaws.com/nexamarket-frontend"
+    newTag: "<IMAGE_TAG>"

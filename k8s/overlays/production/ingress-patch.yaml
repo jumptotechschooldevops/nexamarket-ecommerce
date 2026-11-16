@@ -1,0 +1,19 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: nexamarket-ingress
+  namespace: nexamarket
+  annotations:
+    alb.ingress.kubernetes.io/certificate-arn: "<PRODUCTION_ACM_CERTIFICATE_ARN_PLACEHOLDER>"
+spec:
+  rules:
+    - host: "<DOMAIN_NAME_PLACEHOLDER>"
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: nexamarket-frontend
+                port:
+                  number: 8080

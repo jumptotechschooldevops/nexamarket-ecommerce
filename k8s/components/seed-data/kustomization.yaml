@@ -1,0 +1,13 @@
+# Opt-in Kustomize Component. Included by overlays/staging/kustomization.yaml
+# via:
+#
+#   components:
+#     - ../../components/seed-data
+#
+# Deliberately not included anywhere in base/ or in the production overlay
+# — see seed-job.yaml's own comments for why.
+apiVersion: kustomize.config.k8s.io/v1alpha1
+kind: Component
+
+resources:
+  - seed-job.yaml

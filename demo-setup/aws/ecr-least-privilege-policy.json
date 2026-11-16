@@ -1,0 +1,44 @@
+{
+  "_comment": [
+    "TEMPLATE — not applied to any AWS account. This is the PERMISSIONS",
+    "policy attached to the IAM role GitHub Actions assumes (the role",
+    "github-oidc-trust-policy.json in this same directory is the TRUST",
+    "policy for). Scoped to exactly two ECR repositories in this one",
+    "account/region — not `ecr:*` on `Resource: \"*\"`.",
+    "",
+    "GetAuthorizationToken has no resource-level permissions in IAM (ECR",
+    "requires it to be called with Resource: \"*\" even though every other",
+    "action here is repo-scoped) — that's an AWS API constraint, not a",
+    "loophole: it only lets the caller obtain a token, not push/pull",
+    "anything, which the second statement still restricts to the two named",
+    "repos."
+  ],
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "ECRAuthToken",
+      "Effect": "Allow",
+      "Action": "ecr:GetAuthorizationToken",
+      "Resource": "*"
+    },
+    {
+      "Sid": "ECRPushPullNexamarketRepositoriesOnly",
+      "Effect": "Allow",
+      "Action": [
+        "ecr:BatchCheckLayerAvailability",
+        "ecr:GetDownloadUrlForLayer",
+        "ecr:BatchGetImage",
+        "ecr:PutImage",
+        "ecr:InitiateLayerUpload",
+        "ecr:UploadLayerPart",
+        "ecr:CompleteLayerUpload",
+        "ecr:DescribeRepositories",
+        "ecr:DescribeImages"
+      ],
+      "Resource": [
+        "arn:aws:ecr:us-east-2:668484272259:repository/nexamarket-backend",
+        "arn:aws:ecr:us-east-2:668484272259:repository/nexamarket-frontend"
+      ]
+    }
+  ]
+}

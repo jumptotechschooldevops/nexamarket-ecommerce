@@ -1,0 +1,65 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: nexamarket-production
+  namespace: argocd
+  labels:
+    app.kubernetes.io/part-of: nexamarket
+    app.kubernetes.io/environment: production
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: nexamarket
+
+  source:
+    repoURL: "https://github.com/jumptotechschooldevops/nexamarket-ecommerce.git"
+    # Pin production to a tag (e.g. "v1.4.0") or a protected "production"
+    # branch in a real environment, rather than "main", so a merge to main
+    # doesn't deploy to production before anyone's actually promoted it.
+    # Tracking "main" here matches demo-setup/workflows/release.yml's
+    # single-flow GitOps update for this masterclass.
+    targetRevision: main
+    path: k8s/overlays/production
+
+  destination:
+    # Same single EKS cluster as staging (see application-staging.yaml's
+    # comment) — production is told apart purely by namespace.
+    server: "https://kubernetes.default.svc"
+    namespace: nexamarket-production
+
+  syncPolicy:
+    # Automated + selfHeal is the full GitOps story this masterclass is
+    # demonstrating — Git is the only source of truth, manual `kubectl`
+    # changes get reverted automatically. Many teams instead leave
+    # production on manual sync (remove the `automated:` block entirely)
+    # and gate the actual click-to-sync behind a deploy approval outside
+    # Argo CD; both are legitimate, this just picks one to demonstrate.
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=false
+      - ServerSideApply=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 10s
+        factor: 2
+        maxDuration: 3m
+
+  # See application-staging.yaml's comment — same reason, same two
+  # Deployments, because production's HPAs (overlays/production's
+  # backend/frontend-hpa-patch.yaml) actively manage replicas too.
+  ignoreDifferences:
+    - group: apps
+      kind: Deployment
+      name: nexamarket-backend
+      namespace: nexamarket-production
+      jsonPointers:
+        - /spec/replicas
+    - group: apps
+      kind: Deployment
+      name: nexamarket-frontend
+      namespace: nexamarket-production
+      jsonPointers:
+        - /spec/replicas

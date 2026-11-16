@@ -1,0 +1,132 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nexamarket-backend
+  namespace: nexamarket
+  labels:
+    app.kubernetes.io/name: nexamarket-backend
+    app.kubernetes.io/component: backend
+    app.kubernetes.io/part-of: nexamarket
+spec:
+  # Overridden per-overlay (production: 3, staging: configurable) via
+  # Kustomize's top-level `replicas:` field — see overlays/*/kustomization.yaml.
+  # This base value is only what you get if an overlay is skipped entirely.
+  replicas: 2
+  revisionHistoryLimit: 5
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      # Zero-downtime: never drop below the configured replica count while
+      # rolling out, at the cost of briefly running one extra pod.
+      maxUnavailable: 0
+      maxSurge: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: nexamarket-backend
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: nexamarket-backend
+        app.kubernetes.io/component: backend
+        app.kubernetes.io/part-of: nexamarket
+    spec:
+      serviceAccountName: nexamarket-backend
+      automountServiceAccountToken: false
+      # Pinned explicitly: the cluster's two managed node group workers are
+      # t3.medium (amd64), and the images this Deployment references are
+      # built for linux/amd64 only (see demo-setup/workflows/release.yml's
+      # `docker buildx build --platform linux/amd64`). Without this, a
+      # future arm64/Graviton node added to the cluster could have this
+      # pod scheduled onto it and crash-loop with an "exec format error"
+      # instead of simply never being scheduled there.
+      nodeSelector:
+        kubernetes.io/arch: amd64
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      # Spreads replicas across AZs first, then nodes within an AZ, so a
+      # single zone or node failure can't take out every backend pod at
+      # once. ScheduleAnyway (not DoNotSchedule) so the Deployment still
+      # schedules pods — just less evenly — on a small/dev-sized cluster
+      # that doesn't actually span 3 AZs/nodes.
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: nexamarket-backend
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: nexamarket-backend
+      containers:
+        - name: backend
+          # Account/region are real (668484272259, us-east-2 — the
+          # "testingfile" EKS cluster this is meant to deploy to); only
+          # <IMAGE_TAG> remains a placeholder, filled in per-deploy by
+          # demo-setup/workflows/release.yml's GitOps-update step.
+          image: "668484272259.dkr.ecr.us-east-2.amazonaws.com/nexamarket-backend:<IMAGE_TAG>"
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 4000
+              protocol: TCP
+          envFrom:
+            - configMapRef:
+                name: nexamarket-config
+            - secretRef:
+                name: nexamarket-backend-secrets
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+          # Liveness intentionally does NOT depend on the database: /health
+          # (backend/src/routes/health.ts) is a pure process-alive check. If
+          # it depended on Postgres, a transient DB blip would make the
+          # kubelet kill and restart every backend pod simultaneously —
+          # exactly the wrong response to a database problem.
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          # Readiness DOES check the database (/ready calls
+          # checkDbConnection()) because a pod that can't reach Postgres
+          # genuinely should stop receiving traffic until it can, without
+          # being killed/restarted for it.
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: http
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          # Gives slow first boots (cold Node.js start, initial DB pool
+          # connect) up to 60s before liveness/readiness start counting
+          # failures against the container.
+          startupProbe:
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: 5
+            failureThreshold: 12
+      volumes:
+        - name: tmp
+          emptyDir: {}

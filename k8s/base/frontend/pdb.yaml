@@ -1,0 +1,13 @@
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: nexamarket-frontend
+  namespace: nexamarket
+  labels:
+    app.kubernetes.io/name: nexamarket-frontend
+    app.kubernetes.io/part-of: nexamarket
+spec:
+  minAvailable: 50%
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: nexamarket-frontend

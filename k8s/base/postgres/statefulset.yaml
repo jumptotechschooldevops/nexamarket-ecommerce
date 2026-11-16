@@ -1,0 +1,150 @@
+# ---------------------------------------------------------------------------
+# SINGLE-REPLICA DEMO DATABASE — NOT HIGHLY AVAILABLE.
+#
+# replicas: 1 is deliberate for this masterclass, not an oversight. A real
+# production PostgreSQL tier on EKS would use one of:
+#   - A managed service (Amazon RDS / Aurora PostgreSQL) instead of running
+#     Postgres in-cluster at all — the normal recommendation.
+#   - A proper HA operator (CloudNativePG, Zalando postgres-operator,
+#     Crunchy PGO) running 3 replicas with streaming replication, a
+#     connection-pooling Service that routes writes to the primary, and
+#     automated failover.
+# Plain PostgreSQL in a StatefulSet does not replicate itself — running more
+# than 1 replica here would just create independent, inconsistent
+# databases, not a highly-available cluster. So:
+#   - There is no PodDisruptionBudget for this StatefulSet (see postgres
+#     PDB note in k8s/README.md) — with one replica, any PDB would simply
+#     block every voluntary eviction (node drains, cluster-autoscaler
+#     scale-down) forever, without buying any actual availability.
+#   - A node failure or pod eviction means a real (if brief, thanks to the
+#     PVC surviving and being reattached) outage. Acceptable for a demo;
+#     not acceptable for production.
+# ---------------------------------------------------------------------------
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: nexamarket-postgres
+  namespace: nexamarket
+  labels:
+    app.kubernetes.io/name: nexamarket-postgres
+    app.kubernetes.io/component: database
+    app.kubernetes.io/part-of: nexamarket
+spec:
+  serviceName: nexamarket-postgres-headless
+  replicas: 1
+  podManagementPolicy: OrderedReady
+  updateStrategy:
+    type: RollingUpdate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: nexamarket-postgres
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: nexamarket-postgres
+        app.kubernetes.io/component: database
+        app.kubernetes.io/part-of: nexamarket
+    spec:
+      serviceAccountName: nexamarket-postgres
+      automountServiceAccountToken: false
+      # The official postgres:16-alpine image is multi-arch, but pinning
+      # to the cluster's actual (amd64) worker nodes avoids ever scheduling
+      # onto an arch the EBS volume's attached node might not match in a
+      # mixed-architecture cluster later.
+      nodeSelector:
+        kubernetes.io/arch: amd64
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 999
+        runAsGroup: 999
+        fsGroup: 999
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: postgres
+          image: postgres:16-alpine
+          ports:
+            - name: postgres
+              containerPort: 5432
+              protocol: TCP
+          env:
+            # Defined individually via secretKeyRef (rather than one
+            # envFrom: secretRef) specifically so that $(POSTGRES_USER) and
+            # $(POSTGRES_DB) below can be expanded in the probes' exec
+            # commands — Kubernetes only guarantees $(VAR) expansion in
+            # command/args for variables listed under `env:`, not ones
+            # pulled in via `envFrom:`.
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: nexamarket-postgres-credentials
+                  key: POSTGRES_USER
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: nexamarket-postgres-credentials
+                  key: POSTGRES_PASSWORD
+            - name: POSTGRES_DB
+              valueFrom:
+                secretKeyRef:
+                  name: nexamarket-postgres-credentials
+                  key: POSTGRES_DB
+            # Postgres stores its data directly under this path by default;
+            # pointing it at a subdirectory of the mount avoids the "lost+found"
+            # directory (created by some filesystems at the volume root)
+            # tripping up initdb's "directory must be empty" check.
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+          volumeMounts:
+            - name: postgres-data
+              mountPath: /var/lib/postgresql/data
+            - name: tmp
+              mountPath: /tmp
+            - name: run
+              mountPath: /var/run/postgresql
+          resources:
+            requests:
+              cpu: 250m
+              memory: 256Mi
+            limits:
+              cpu: "1"
+              memory: 1Gi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          startupProbe:
+            exec:
+              command: ["pg_isready", "-U", "$(POSTGRES_USER)", "-d", "$(POSTGRES_DB)"]
+            periodSeconds: 5
+            failureThreshold: 30 # up to 150s for first-time initdb on a fresh volume
+          readinessProbe:
+            exec:
+              command: ["pg_isready", "-U", "$(POSTGRES_USER)", "-d", "$(POSTGRES_DB)"]
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          livenessProbe:
+            exec:
+              command: ["pg_isready", "-U", "$(POSTGRES_USER)", "-d", "$(POSTGRES_DB)"]
+            periodSeconds: 20
+            timeoutSeconds: 5
+            failureThreshold: 6
+      volumes:
+        - name: tmp
+          emptyDir: {}
+        - name: run
+          emptyDir: {}
+  volumeClaimTemplates:
+    - metadata:
+        name: postgres-data
+        labels:
+          app.kubernetes.io/name: nexamarket-postgres
+          app.kubernetes.io/part-of: nexamarket
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        storageClassName: nexamarket-ebs-gp3-encrypted
+        resources:
+          requests:
+            storage: 10Gi

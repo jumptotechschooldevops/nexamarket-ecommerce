@@ -1,0 +1,13 @@
+# A Kustomize Component (not a base/overlay) — meant to be opted into by an
+# overlay's own `components:` list, e.g.:
+#
+#   components:
+#     - ../../components/monitoring
+#
+# rather than being applied on its own. See k8s/README.md for which
+# overlays include it and why.
+apiVersion: kustomize.config.k8s.io/v1alpha1
+kind: Component
+
+resources:
+  - servicemonitor.yaml

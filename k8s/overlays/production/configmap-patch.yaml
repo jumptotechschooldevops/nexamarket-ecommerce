@@ -1,0 +1,10 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: nexamarket-config
+  namespace: nexamarket
+data:
+  # Must match the Ingress host below so the backend's CORS middleware
+  # accepts requests from the real production frontend origin.
+  CORS_ORIGIN: "https://<DOMAIN_NAME_PLACEHOLDER>"
+  LOG_LEVEL: "info"

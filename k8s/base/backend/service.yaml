@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: nexamarket-backend
+  namespace: nexamarket
+  labels:
+    app.kubernetes.io/name: nexamarket-backend
+    app.kubernetes.io/part-of: nexamarket
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: nexamarket-backend
+  ports:
+    - name: http
+      port: 4000
+      targetPort: http

@@ -1,0 +1,46 @@
+{
+  "_comment": [
+    "TEMPLATE — not applied to any AWS account. This is the trust policy",
+    "(assume-role policy document) for the IAM role GitHub Actions assumes",
+    "via OIDC — paired with demo-setup/aws/ecr-least-privilege-policy.json",
+    "as that role's PERMISSIONS policy (trust = who can assume the role;",
+    "permissions = what the role can do once assumed — two separate",
+    "documents on purpose).",
+    "",
+    "Assumes the GitHub OIDC provider",
+    "(token.actions.githubusercontent.com) has already been registered as",
+    "an IAM Identity Provider in this AWS account — a one-time, account-wide",
+    "setup step, not something this file creates. See MASTERCLASS.md for",
+    "the exact `aws iam create-open-id-connect-provider` command.",
+    "",
+    "Replace <GITHUB_ORG>/<GITHUB_REPO> below with",
+    "jumptotechschooldevops/nexamarket-ecommerce before use — the",
+    "StringLike condition is what makes this trust relationship specific",
+    "to THIS repository rather than any GitHub Actions run anywhere.",
+    "",
+    "Scoped to refs/heads/main only, not to pull_request runs: only",
+    "demo-setup/workflows/release.yml (push to main) ever calls",
+    "aws-actions/configure-aws-credentials — demo-setup/workflows/ci.yml",
+    "(pull_request) never touches AWS at all, so it has no business being",
+    "able to assume this role."
+  ],
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "AllowGitHubActionsOIDC",
+      "Effect": "Allow",
+      "Principal": {
+        "Federated": "arn:aws:iam::668484272259:oidc-provider/token.actions.githubusercontent.com"
+      },
+      "Action": "sts:AssumeRoleWithWebIdentity",
+      "Condition": {
+        "StringEquals": {
+          "token.actions.githubusercontent.com:aud": "sts.amazonaws.com"
+        },
+        "StringLike": {
+          "token.actions.githubusercontent.com:sub": "repo:<GITHUB_ORG>/<GITHUB_REPO>:ref:refs/heads/main"
+        }
+      }
+    }
+  ]
+}

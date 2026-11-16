@@ -1,0 +1,8 @@
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: nexamarket-frontend
+  namespace: nexamarket
+spec:
+  minReplicas: 3
+  maxReplicas: 8

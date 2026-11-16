@@ -317,6 +317,16 @@ validation for this handover — see the [handover report](#handover-to-devops) 
 
 ## Handover to DevOps
 
+> **Update**: the Kubernetes/Argo CD manifests (`k8s/`), CI/CD workflow templates and AWS IAM
+> documents (`demo-setup/`), and the exact-commands runbook (`MASTERCLASS.md`) referenced as "not
+> implemented" below now exist, as of the `feature/kubernetes-infrastructure` branch — see
+> [`k8s/README.md`](k8s/README.md) and [`MASTERCLASS.md`](MASTERCLASS.md). The workflow templates
+> stay inert under `demo-setup/workflows/` (not `.github/workflows/`) and nothing has been applied
+> to the real `testingfile` EKS cluster or AWS account yet — `MASTERCLASS.md` is the live
+> activation runbook for that. Terraform, Route 53/HTTPS DNS, Prometheus/Grafana (beyond the
+> optional `ServiceMonitor` in `k8s/components/monitoring/`), PagerDuty and disaster recovery
+> remain out of scope.
+
 The DevOps team owns everything downstream of this repository's `main` branch: GitHub Actions CI/CD, SonarQube
 quality gates, Trivy image scanning, AWS IAM/OIDC, Amazon ECR, Terraform, Amazon EKS, the PostgreSQL
 StatefulSet (StorageClass/PVC/PV/EBS CSI), Helm charts, Argo CD, ALB/Ingress, Route 53/HTTPS, Prometheus/Grafana,

@@ -1,0 +1,55 @@
+# Requires the Prometheus Operator CRDs (kube-prometheus-stack or a
+# standalone installation of the operator) already installed on the
+# cluster — this is why it lives in an optional Kustomize Component rather
+# than base/, which must build cleanly even on a cluster that doesn't have
+# Prometheus Operator installed at all.
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: nexamarket-backend
+  namespace: nexamarket
+  labels:
+    app.kubernetes.io/name: nexamarket-backend
+    app.kubernetes.io/part-of: nexamarket
+    # Matches the `serviceMonitorSelector` most kube-prometheus-stack
+    # installs ship with by default; adjust to whatever label your
+    # Prometheus Operator's `release:` selector actually expects.
+    release: prometheus
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: nexamarket-backend
+  namespaceSelector:
+    matchNames:
+      - nexamarket
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: 30s
+      scrapeTimeout: 10s
+---
+# Allows Prometheus (running in its own "monitoring" namespace, the
+# convention kube-prometheus-stack uses) to reach the backend's /metrics
+# endpoint even though allow-ingress-to-backend in base/networkpolicy.yaml
+# otherwise restricts backend ingress to the frontend only.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-ingress-to-backend-from-monitoring
+  namespace: nexamarket
+  labels:
+    app.kubernetes.io/part-of: nexamarket
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: nexamarket-backend
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: monitoring
+      ports:
+        - protocol: TCP
+          port: 4000

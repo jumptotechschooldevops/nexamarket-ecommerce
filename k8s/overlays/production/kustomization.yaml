@@ -1,0 +1,44 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - ../../base
+
+# Single EKS cluster (testingfile), both environments live here side by
+# side — this is what actually separates production from staging, not a
+# different cluster. Renames base/namespace.yaml's Namespace itself (from
+# "nexamarket" to "nexamarket-production") AND sets metadata.namespace on
+# every namespaced resource to match, in one step. BACKEND_UPSTREAM/
+# DATABASE_URL in base/ deliberately use short (unqualified) Service names
+# so they keep resolving correctly after this rename — see their comments.
+namespace: nexamarket-production
+
+# Optional monitoring (ServiceMonitor + the NetworkPolicy allowing
+# Prometheus to scrape it) is enabled for production, where you'd actually
+# have Prometheus Operator installed and alerting configured. It requires
+# the Prometheus Operator CRDs to already exist on the cluster — remove
+# this if they don't.
+components:
+  - ../../components/monitoring
+
+# Fixed replica counts per the masterclass requirement: 3 frontend, 3
+# backend in production. The HPA patches below raise minReplicas to match,
+# so the HPA never fights the Deployment by scaling below this floor, and
+# can still scale out further under real load.
+replicas:
+  - name: nexamarket-backend
+    count: 3
+  - name: nexamarket-frontend
+    count: 3
+
+patches:
+  - path: configmap-patch.yaml
+  - path: ingress-patch.yaml
+  - path: backend-hpa-patch.yaml
+  - path: frontend-hpa-patch.yaml
+
+labels:
+  - pairs:
+      app.kubernetes.io/instance: nexamarket-production
+      app.kubernetes.io/environment: production
+    includeSelectors: false

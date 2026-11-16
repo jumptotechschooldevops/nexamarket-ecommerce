@@ -1,0 +1,46 @@
+# Requires the AWS Load Balancer Controller add-on running in the cluster
+# (it watches Ingress objects with ingressClassName: alb and provisions a
+# real Application Load Balancer + target groups for them).
+#
+# Routes everything to the frontend Service rather than splitting /api to
+# the backend Service directly at the ALB: the frontend's Nginx already
+# proxies /api/* to the backend in-cluster (frontend/nginx/default.conf.template),
+# which is exactly how the local docker-compose stack and `vite dev` proxy
+# both work too — this keeps all three environments (dev, compose, EKS)
+# routing traffic the same way, with one less place to misconfigure.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: nexamarket-ingress
+  namespace: nexamarket
+  labels:
+    app.kubernetes.io/part-of: nexamarket
+  annotations:
+    alb.ingress.kubernetes.io/scheme: internet-facing
+    # target-type: ip — the ALB registers pod IPs directly as targets
+    # (requires the VPC CNI; works on both EC2 and Fargate nodes), instead
+    # of registering whole worker nodes and relying on NodePort+kube-proxy.
+    alb.ingress.kubernetes.io/target-type: ip
+    alb.ingress.kubernetes.io/listen-ports: '[{"HTTP": 80}, {"HTTPS": 443}]'
+    alb.ingress.kubernetes.io/ssl-redirect: "443"
+    alb.ingress.kubernetes.io/certificate-arn: "<ACM_CERTIFICATE_ARN_PLACEHOLDER>"
+    alb.ingress.kubernetes.io/healthcheck-path: /health
+    alb.ingress.kubernetes.io/healthcheck-port: "traffic-port"
+    alb.ingress.kubernetes.io/success-codes: "200"
+    # Lets multiple Ingress objects (e.g. this one plus a future
+    # monitoring/Grafana Ingress) share a single ALB instead of each
+    # provisioning its own.
+    alb.ingress.kubernetes.io/group.name: nexamarket
+spec:
+  ingressClassName: alb
+  rules:
+    - host: "<DOMAIN_NAME_PLACEHOLDER>"
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: nexamarket-frontend
+                port:
+                  number: 8080

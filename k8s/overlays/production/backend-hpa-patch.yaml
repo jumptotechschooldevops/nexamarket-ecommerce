@@ -1,0 +1,10 @@
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: nexamarket-backend
+  namespace: nexamarket
+spec:
+  # Floor matches the 3 fixed replicas below so the HPA never scales below
+  # what the Deployment itself asks for.
+  minReplicas: 3
+  maxReplicas: 10
